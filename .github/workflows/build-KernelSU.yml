@@ -25,7 +25,7 @@ jobs:
     - name: Download kernel source
       run: |
         git clone https://github.com/Project-Miracle/android_kernel_microsoft_wsa -b A13 kernel --depth=1
-        cd $GITHUB_WORKSPACE/kernel_workspace
+        cd $GITHUB_WORKSPACE/kernel
         cd configs
         git clone https://github.com/Project-Miracle/android_kernel_microsoft_wsa -b A13 kernel common --depth=1
         cd common/scripts
