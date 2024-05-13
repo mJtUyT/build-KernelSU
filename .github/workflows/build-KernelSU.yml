@@ -1,4 +1,4 @@
-name: Build WSA Miracle r3 KernelSU
+name: Build WSA KernelSU
 on:
   workflow_dispatch:
 
@@ -26,6 +26,7 @@ jobs:
       run: |
         git clone https://github.com/Project-Miracle/android_kernel_microsoft_wsa -b A13 kernel --depth=1
         cd $GITHUB_WORKSPACE/kernel_workspace
+        cd kernel
         git clone https://github.com/Project-Miracle/android_kernel_microsoft_wsa -b A13 kernel common --depth=1
         cd common/scripts
         sed -i 's/ -dirty//g' setlocalversion
