@@ -24,7 +24,7 @@ jobs:
         mkdir -p $GITHUB_WORKSPACE/kernel_workspace
     - name: Download kernel source
       run: |
-        git clone https://github.com/Project-Miracle/android_kernel_microsoft_wsa/tree/A13/kernel --depth=1
+        git clone https://github.com/Project-Miracle/android_kernel_microsoft_wsa -b A13/kernel --depth=1
         cd $GITHUB_WORKSPACE/kernel_workspace
         cd kernel_platform
         git clone https://github.com/OnePlusOSS/android_kernel_oneplus_sm8550 -b oneplus/sm8550_u_14.0.0_oneplus11 common --depth=1
