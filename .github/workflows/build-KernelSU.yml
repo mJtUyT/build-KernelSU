@@ -1,4 +1,4 @@
-name: Build OnePlus11 C14 KernelSU
+name: Build OnePlus11 C15 KernelSU
 on:
   workflow_dispatch:
 
@@ -11,7 +11,7 @@ jobs:
       CCACHE_NOHASHDIR: "true"
       CCACHE_HARDLINK: "true"
     steps:
-    - name: Set swap to 10G
+    - name: Set swap to 15G
       uses: pierotofy/set-swap-space@master
       with:
         swap-size-gb: 10
@@ -24,10 +24,10 @@ jobs:
         mkdir -p $GITHUB_WORKSPACE/kernel_workspace
     - name: Download kernel source
       run: |
-        git clone https://github.com/OnePlusOSS/android_kernel_modules_and_devicetree_oneplus_sm8550 -b oneplus/sm8550_u_14.0.0_oneplus11 kernel_workspace --depth=1
+        git clone https://github.com/OnePlusOSS/android_kernel_modules_and_devicetree_oneplus_sm8550 -b oneplus/sm8550_v_15.0.0_oneplus11 kernel_workspace --depth=1
         cd $GITHUB_WORKSPACE/kernel_workspace
         cd kernel_platform
-        git clone https://github.com/OnePlusOSS/android_kernel_oneplus_sm8550 -b oneplus/sm8550_u_14.0.0_oneplus11 common --depth=1
+        git clone https://github.com/OnePlusOSS/android_kernel_oneplus_sm8550 -b oneplus/sm8550_v_15.0.0_oneplus11 common --depth=1
         cd common/scripts
         sed -i 's/ -dirty//g' setlocalversion
         sed -i 's/ -g / -android13-8-g /g' setlocalversion
