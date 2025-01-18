@@ -1,4 +1,4 @@
-name: Build Android 13 5.15 GKI Kernels
+name: Build OnePuls11 5.15 SusfsKernel
 
 on:
   workflow_call:  # This allows this workflow to be called from another workflow
