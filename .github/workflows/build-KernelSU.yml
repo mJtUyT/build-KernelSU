@@ -1,106 +1,88 @@
-name: Build Kernel - WSA
+name: Build OnePlus 11 A14 Kernel
 on:
-  workflow_call:
-    inputs:
-      arch:
-        required: true
-        type: string
-        description: >
-          Build arch: x86_64 / arm64
-      version:
-        required: true
-        type: string
-        description: >
-          Build version
+  workflow_dispatch:
+
 jobs:
   build:
-    name: Build WSA-Kernel-${{ inputs.version }}-${{ inputs.arch }}
-    runs-on: ubuntu-22.04
+    name: Build Kernel by ${{ github.actor }}
+    runs-on: ubuntu-latest
     env:
       CCACHE_COMPILERCHECK: "%compiler% -dumpmachine; %compiler% -dumpversion"
       CCACHE_NOHASHDIR: "true"
       CCACHE_HARDLINK: "true"
-
     steps:
-      - name: Install Build Tools
-        uses: awalsh128/cache-apt-pkgs-action@v1
-        with:
-          packages: bc bison build-essential flex libelf-dev binutils-aarch64-linux-gnu gcc-aarch64-linux-gnu gzip ccache
-          version: 1.0
+    - name: Set swap to 10G
+      uses: pierotofy/set-swap-space@master
+      with:
+        swap-size-gb: 10
 
-      - name: Cache LLVM
-        id: cache-llvm
-        uses: actions/cache@v4
-        with:
-          path: ./llvm
-          key: llvm-12.0.1
+    - name: Setup build kernel environment
+      run: |
+        echo "BUILD_TIME=$(TZ=Asia/Shanghai date "+%y%m%d")" >> $GITHUB_ENV
+        sudo apt-get update
+        sudo apt-get install git dwarves libelf-dev ccache automake flex lzop bison gperf build-essential zip curl zlib1g-dev g++-multilib libxml2-utils bzip2 libbz2-dev libbz2-1.0 libghc-bzlib-dev squashfs-tools pngcrush schedtool dpkg-dev liblz4-tool make optipng maven libssl-dev pwgen libswitch-perl policycoreutils minicom libxml-sax-base-perl libxml-simple-perl bc libc6-dev-i386 lib32ncurses5-dev libx11-dev lib32z-dev libgl1-mesa-dev xsltproc unzip device-tree-compiler python2 python3
+        mkdir -p $GITHUB_WORKSPACE/kernel_workspace
 
-      - name: Setup LLVM
-        uses: KyleMayes/install-llvm-action@v1
-        with:
-          version: "12.0.1"
-          force-version: true
-          ubuntu-version: "16.04"
-          cached: ${{ steps.cache-llvm.outputs.cache-hit }}
+    - name: Download kernel source
+      run: |
+        cd $GITHUB_WORKSPACE/kernel_workspace
+        git clone --recursive https://github.com/LineageOS/android_kernel_oneplus_sm8550 -b lineage-21 common --depth=1
+        cd common/scripts
+        sed -i 's/ -dirty//g' setlocalversion
+        sed -i 's/ -g / -android13-8-g /g' setlocalversion
 
-      - name: Checkout KernelSU
-        uses: actions/checkout@v4
-        with:
-          path: KernelSU
-          fetch-depth: 0
+    - name: Download Clang-aosp
+      run: |
+        cd $GITHUB_WORKSPACE/kernel_workspace
+        mkdir clang-aosp
+        wget https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/master-kernel-build-2022/clang-r450784e.tar.gz
+        tar -C clang-aosp/ -zxvf clang-r450784e.tar.gz
 
-      - name: Setup kernel source
-        uses: actions/checkout@v4
-        with:
-          repository: microsoft/WSA-Linux-Kernel
-          ref: android-lts/latte-2/${{ inputs.version }}
-          path: WSA-Linux-Kernel
+    - name: Setup KernelSU
+      run: |
+        cd $GITHUB_WORKSPACE/kernel_workspace/common
+        rm -rf KernelSU drivers/kernelsu
+        curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -s main
+        KSU_VERSION=$(cd KernelSU && expr $(/usr/bin/git rev-list --count HEAD) + 10200)
+        echo "UPLOADNAME=-KSU_$KSU_VERSION" >> $GITHUB_ENV
 
-      - name: Setup Ccache
-        uses: hendrikmuhs/ccache-action@v1
-        with:
-          key: WSA-Kernel-${{ inputs.version }}-${{ inputs.arch }}
-          save: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
-          max-size: 2G
+    - name: Build kernel
+      run: |
+        cd $GITHUB_WORKSPACE/kernel_workspace
+        KERNEL_DIR=./common
+        OUT_DIR=../out
+        DEFCONFIG="gki_defconfig vendor/kalama_GKI.config vendor/oplus/kalama_GKI.config vendor/debugfs.config vendor/oplus/salami.config"
+        LTO=thin
+        export PATH=$GITHUB_WORKSPACE/kernel_workspace/clang-aosp/bin:$PATH
+        export CLANG_TRIPLE=aarch64-linux-gnu-
+        export ARCH=arm64
+        export SUBARCH=arm64
+        export HEADER_ARCH=arm64
+        TOOL_ARGS+=("ARCH=${ARCH}" "SUBARCH=${SUBARCH}" "HEADER_ARCH=${HEADER_ARCH}")
+        CC=clang CXX=clang++ && TOOL_ARGS+=("CC=${CC}"  "CXX=${CXX}")
+        LD=ld.lld AR=llvm-ar NM=llvm-nm OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump READELF=llvm-readelf OBJSIZE=llvm-size STRIP=llvm-strip && TOOL_ARGS+=("LD=${LD}" "AR=${AR}" "NM=${NM}" "OBJCOPY=${OBJCOPY}" "OBJDUMP=${OBJDUMP}" "STRIP=${STRIP}")
+        LLVM=1 LLVM_IAS=1 && TOOL_ARGS+=("LLVM=${LLVM}" "LLVM_IAS=${LLVM_IAS}")
+        cd ${KERNEL_DIR}
+        THREAD=14
+        make -j"$THREAD" "${TOOL_ARGS[@]}" O=${OUT_DIR}  ${DEFCONFIG}
+        scripts/config --file ${OUT_DIR}/.config -e LTO_CLANG -d LTO_NONE -e LTO_CLANG_THIN -d LTO_CLANG_FULL -e THINLTO
+        THREAD=$(($(nproc --all) - 1))
+        make -j"$THREAD" O=${OUT_DIR} "${TOOL_ARGS[@]}"
 
-      - name: Setup KernelSU
-        working-directory: WSA-Linux-Kernel
-        run: |
-          echo "[+] KernelSU setup"
-          KERNEL_ROOT=$GITHUB_WORKSPACE/WSA-Linux-Kernel
-          echo "[+] KERNEL_ROOT: $KERNEL_ROOT"
-          echo "[+] Copy KernelSU driver to $KERNEL_ROOT/drivers"
-          ln -sf $GITHUB_WORKSPACE/KernelSU/kernel $KERNEL_ROOT/drivers/kernelsu
-          echo "[+] Add KernelSU driver to Makefile"
-          DRIVER_MAKEFILE=$KERNEL_ROOT/drivers/Makefile
-          DRIVER_KCONFIG=$KERNEL_ROOT/drivers/Kconfig
-          grep -q "kernelsu" "$DRIVER_MAKEFILE" || printf "\nobj-\$(CONFIG_KSU) += kernelsu/\n" >> "$DRIVER_MAKEFILE"
-          grep -q "kernelsu" "$DRIVER_KCONFIG" || sed -i "/endmenu/i\\source \"drivers/kernelsu/Kconfig\"" "$DRIVER_KCONFIG"
-          echo "[+] Apply KernelSU patches"
-          cd $KERNEL_ROOT && git apply $GITHUB_WORKSPACE/KernelSU/.github/patches/5.15/*.patch || echo "[-] No patch found"
-          echo "[+] KernelSU setup done."
-          cd $GITHUB_WORKSPACE/KernelSU
-          VERSION=$(($(git rev-list --count HEAD) + 10200))
-          echo "VERSION: $VERSION"
-          echo "kernelsu_version=$VERSION" >> $GITHUB_ENV
+    - name: Make Anykernel3
+      run: |
+        cd $GITHUB_WORKSPACE/kernel_workspace
+        git clone https://github.com/Kernel-SU/AnyKernel3 --depth=1 AnyKernel3
+        cp out/arch/arm64/boot/Image AnyKernel3/
 
-      - name: Build Kernel
-        working-directory: WSA-Linux-Kernel
-        run: |
-          if [ ! -z ${{ vars.EXPECTED_SIZE }} ] && [ ! -z ${{ vars.EXPECTED_HASH }} ]; then
-            export KSU_EXPECTED_SIZE=${{ vars.EXPECTED_SIZE }}
-            export KSU_EXPECTED_HASH=${{ vars.EXPECTED_HASH }}
-          fi
-          declare -A ARCH_MAP=(["x86_64"]="x64" ["arm64"]="arm64")
-          cp configs/wsa/config-wsa-${ARCH_MAP[${{ inputs.arch }}]} .config
-          make olddefconfig
-          declare -A FILE_NAME=(["x86_64"]="bzImage" ["arm64"]="Image")
-          make -j`nproc` LLVM=1 ARCH=${{ inputs.arch }} $(if [ "${{ inputs.arch }}" == "arm64" ]; then echo CROSS_COMPILE=aarch64-linux-gnu; fi) ${FILE_NAME[${{ inputs.arch }}]} CCACHE="/usr/bin/ccache"
-          declare -A ARCH_MAP_FILE=(["x86_64"]="x86" ["arm64"]="arm64")
-          echo "file_path=WSA-Linux-Kernel/arch/${ARCH_MAP_FILE[${{ inputs.arch }}]}/boot/${FILE_NAME[${{ inputs.arch }}]}" >> $GITHUB_ENV
+    - name: Upload Image
+      uses: actions/upload-artifact@v4
+      with:
+        name: Image
+        path: kernel_workspace/out/arch/arm64/boot/Image
 
-      - name: Upload kernel-${{ inputs.arch }}-${{ inputs.version }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: kernel-WSA-${{ inputs.arch }}-${{ inputs.version }}
-          path: "${{ env.file_path }}"
+    - name: Upload AnyKernel3
+      uses: actions/upload-artifact@v4
+      with:
+        name: AK3-OP11-A14${{ env.UPLOADNAME }}-${{ env.BUILD_TIME }}
+        path: kernel_workspace/AnyKernel3/*
